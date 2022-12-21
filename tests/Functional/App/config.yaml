@@ -1,6 +1,5 @@
 framework:
     annotations: true
-    http_method_override: false
     secret: test
     test: ~
     default_locale: en
@@ -19,34 +18,28 @@ snc_redis:
         default:
             type: phpredis
             alias: default
-            dsn: redis://sncredis@localhost
+            dsn: redis://redis:sncredis@localhost
             logging: '%kernel.debug%'
         cache:
             type: predis
             alias: cache
-            dsn: redis://sncredis@localhost/1
+            dsn: redis://redis:sncredis@localhost/1
             logging: false
         cluster:
             type: predis
             alias: cluster
             dsn:
-              - redis://sncredis@127.0.0.1/3
-              - redis://sncredis@127.0.0.1/4
-              - redis://sncredis@127.0.0.1/5
+              - redis://redis:sncredis@127.0.0.1/3
+              - redis://redis:sncredis@127.0.0.1/4
+              - redis://redis:sncredis@127.0.0.1/5
             options:
                 prefix: foo
+                profile: 2.4
                 connection_timeout: 10
                 connection_persistent: true
                 read_write_timeout: 30
                 iterable_multibulk: false
                 throw_errors: true
-        sentinel:
-            type: phpredis
-            alias: sentinel
-            dsn: redis://sncredis@localhost:26379
-            options:
-                replication: true
-                service: mymaster
         with_acl:
             type: predis
             alias: with_acl
@@ -67,10 +60,6 @@ services:
 
     logger:
         class: Psr\Log\NullLogger
-
-    test.snc_redis.logger:
-        alias: snc_redis.logger
-        public: true
 
     Snc\RedisBundle\Tests\Functional\App\Controller\:
         resource: './Controller'

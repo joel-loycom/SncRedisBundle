@@ -15,13 +15,13 @@ namespace Snc\RedisBundle\DependencyInjection;
 
 use InvalidArgumentException;
 use LogicException;
-use RedisSentinel;
+use Predis\Command\Processor\KeyPrefixProcessor;
+use Predis\Profile\Factory;
 use Snc\RedisBundle\DependencyInjection\Configuration\Configuration;
 use Snc\RedisBundle\DependencyInjection\Configuration\RedisDsn;
 use Snc\RedisBundle\DependencyInjection\Configuration\RedisEnvDsn;
 use Snc\RedisBundle\Factory\PredisParametersFactory;
 use Snc\RedisBundle\Logger\RedisCallInterceptor;
-use Symfony\Bridge\ProxyManager\LazyProxy\PhpDumper\ProxyDumper;
 use Symfony\Component\Config\Definition\ConfigurationInterface;
 use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
 use Symfony\Component\Config\FileLocator;
@@ -35,6 +35,8 @@ use function array_map;
 use function assert;
 use function class_exists;
 use function count;
+use function get_class;
+use function is_string;
 use function sprintf;
 
 class SncRedisExtension extends Extension
@@ -136,13 +138,10 @@ class SncRedisExtension extends Extension
         $client['options']['timeout']       = $client['options']['connection_timeout'];
         $client['options']['persistent']    = $client['options']['connection_persistent'];
         $client['options']['exceptions']    = $client['options']['throw_errors'];
-        // fix ssl configuration key name
-        $client['options']['ssl'] = $client['options']['parameters']['ssl_context'] ?? [];
         unset($client['options']['connection_async']);
         unset($client['options']['connection_timeout']);
         unset($client['options']['connection_persistent']);
         unset($client['options']['throw_errors']);
-        unset($client['options']['parameters']['ssl_context']);
 
         $connectionAliases = [];
         $connectionCount   = count($client['dsns']);
@@ -162,6 +161,23 @@ class SncRedisExtension extends Extension
 
             $this->loadPredisConnectionParameters($client['alias'], $connection, $container, $dsn);
         }
+
+        $profile = $client['options']['profile'];
+        // TODO can be shared between clients?!
+        $profile    = $container->resolveEnvPlaceholders($profile, true);
+        $profile    = !is_string($profile) ? sprintf('%.1F', $profile) : $profile;
+        $profileId  = sprintf('snc_redis.client.%s_profile', $client['alias']);
+        $profileDef = new Definition(get_class(Factory::get($profile))); // TODO get_class alternative?
+        if ($client['options']['prefix'] !== null) {
+            $processorId  = sprintf('snc_redis.client.%s_processor', $client['alias']);
+            $processorDef = new Definition(KeyPrefixProcessor::class);
+            $processorDef->setArguments([$client['options']['prefix']]);
+            $container->setDefinition($processorId, $processorDef);
+            $profileDef->addMethodCall('setProcessor', [new Reference($processorId)]);
+        }
+
+        $container->setDefinition($profileId, $profileDef);
+        $client['options']['profile'] = new Reference($profileId);
 
         $optionId  = sprintf('snc_redis.client.%s_options', $client['alias']);
         $optionDef = new Definition((string) $container->getParameter('snc_redis.client_options.class'));
@@ -205,22 +221,16 @@ class SncRedisExtension extends Extension
     /** @param mixed[] $options A client configuration */
     private function loadPhpredisClient(array $options, ContainerBuilder $container): void
     {
-        $connectionCount   = count($options['dsns']);
-        $hasClusterOption  = $options['options']['cluster'] !== null;
-        $hasSentinelOption = isset($options['options']['replication']);
+        $connectionCount  = count($options['dsns']);
+        $hasClusterOption = $options['options']['cluster'] !== null;
 
-        if ($connectionCount > 1 && !$hasClusterOption && !$hasSentinelOption) {
-            throw new LogicException('Use options "cluster" or "sentinel" to enable support for multi DSN instances.');
-        }
-
-        if ($hasClusterOption && $hasSentinelOption) {
-            throw new LogicException('You cannot have both cluster and sentinel enabled for same redis connection');
+        if ($connectionCount > 1 && !$hasClusterOption) {
+            throw new LogicException(sprintf('\RedisArray is not supported yet but \RedisCluster is: set option "cluster" to true to enable it.'));
         }
 
         $phpredisClientClass = (string) $container->getParameter('snc_redis.phpredis_' . ($hasClusterOption ? 'cluster' : '') . 'client.class');
-
-        $phpredisDef = new Definition($phpredisClientClass, [
-            $hasSentinelOption ? RedisSentinel::class : $phpredisClientClass,
+        $phpredisDef         = new Definition($phpredisClientClass, [
+            $phpredisClientClass,
             array_map('strval', $options['dsns']),
             $options['options'],
             $options['alias'],
@@ -228,7 +238,7 @@ class SncRedisExtension extends Extension
         ]);
         $phpredisDef->setFactory([new Reference('snc_redis.phpredis_factory'), 'create']);
         $phpredisDef->addTag('snc_redis.client', ['alias' => $options['alias']]);
-        $phpredisDef->setLazy(class_exists(ProxyDumper::class));
+        $phpredisDef->setLazy(true);
 
         $container->setDefinition(sprintf('snc_redis.%s', $options['alias']), $phpredisDef);
     }

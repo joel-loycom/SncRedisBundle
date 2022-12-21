@@ -8,7 +8,6 @@ use function implode;
 use function is_numeric;
 use function is_scalar;
 use function microtime;
-use function preg_replace;
 use function strtoupper;
 use function strval;
 use function trim;
@@ -39,14 +38,12 @@ class RedisCallInterceptor
         $time    = microtime(true);
 
         if ($this->stopwatch) {
-            $event = $this->stopwatch->start(preg_replace('/[^[:print:]]/', '', $command), 'redis');
+            $event = $this->stopwatch->start($command, 'redis');
         }
 
-        try {
-            $return = $instance->$method(...$args);
-        } finally {
-            $this->logger->logCommand($command, (microtime(true) - $time) * 1000, $connection);
-        }
+        $return = $instance->$method(...$args);
+
+        $this->logger->logCommand($command, microtime(true) - $time, $connection);
 
         if (isset($event)) {
             $event->stop();

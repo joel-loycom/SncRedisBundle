@@ -14,16 +14,15 @@ declare(strict_types=1);
 namespace Snc\RedisBundle\Logger;
 
 use Psr\Log\LoggerInterface;
-use Symfony\Contracts\Service\ResetInterface;
 
 use function array_shift;
 use function count;
 
-class RedisLogger implements ResetInterface
+class RedisLogger
 {
     protected ?LoggerInterface $logger;
     protected int $nbCommands = 0;
-    /** @var list<array{cmd: string, executionMS: float, conn: ?string, error: string|false}> */
+    /** @var list<array{cmd: string, executionMS: float, conn: string, error: string|false}> */
     protected array $commands = [];
     private int $bufferSize   = 200;
 
@@ -34,7 +33,7 @@ class RedisLogger implements ResetInterface
     }
 
     /** @param false|string $error Error message or false if command was successful */
-    public function logCommand(string $command, float $duration, ?string $connection, $error = false): void
+    public function logCommand(string $command, float $duration, string $connection, $error = false): void
     {
         ++$this->nbCommands;
 
@@ -67,11 +66,5 @@ class RedisLogger implements ResetInterface
     public function getCommands(): array
     {
         return $this->commands;
-    }
-
-    public function reset(): void
-    {
-        $this->commands   = [];
-        $this->nbCommands = 0;
     }
 }

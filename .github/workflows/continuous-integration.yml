@@ -12,14 +12,6 @@ jobs:
       SYMFONY_REQUIRE: "${{matrix.symfony-require}}"
       SYMFONY_DEPRECATIONS_HELPER: "max[self]=0"
 
-    services:
-      redis-sentinel:
-        image: bitnami/redis-sentinel
-        env:
-          REDIS_MASTER_HOST: localhost
-        ports:
-          - 26379:26379
-
     strategy:
       fail-fast: false
       matrix:
@@ -28,21 +20,27 @@ jobs:
             php-version: "7.4"
             php-extensions: "redis-5.3.0"
           - symfony-require: "4.4.*"
-            php-version: "8.1"
+            php-version: "8.0"
+            php-extensions: "redis"
+          - symfony-require: "5.3.*"
+            php-version: "7.4"
+            php-extensions: "redis"
+          - symfony-require: "5.3.*"
+            php-version: "8.0"
             php-extensions: "redis"
           - symfony-require: "5.4.*"
-            php-version: "8.2"
+            php-version: "8.0"
             php-extensions: "redis"
-          - symfony-require: "6.2.*"
-            php-version: "8.2"
+          - symfony-require: "6.0.*"
+            php-version: "8.1"
             php-extensions: "redis"
-          - symfony-require: "6.3.*"
-            php-version: "8.2"
+          - symfony-require: "6.0.*"
+            php-version: "8.1"
             php-extensions: "redis-phpredis/phpredis@develop"
 
     steps:
       - name: "Checkout"
-        uses: "actions/checkout@v3"
+        uses: "actions/checkout@v2"
         with:
           fetch-depth: 2
 
@@ -81,10 +79,10 @@ jobs:
           ini-values: "zend.assertions=1, max_execution_time=30"
 
       - name: "Install symfony/flex"
-        run: "composer require --no-progress --no-scripts --no-plugins symfony/flex"
+        run: "composer global require --no-progress --no-scripts --no-plugins symfony/flex"
 
       - name: "Install dependencies with Composer"
-        uses: "ramsey/composer-install@v2"
+        uses: "ramsey/composer-install@v1"
         with:
           dependency-versions: "${{ matrix.dependency-versions }}"
 
