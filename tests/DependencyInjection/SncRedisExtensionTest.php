@@ -15,6 +15,8 @@ namespace Snc\RedisBundle\Tests\DependencyInjection;
 
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
+use Redis;
+use RedisException;
 use Snc\RedisBundle\DependencyInjection\Configuration\Configuration;
 use Snc\RedisBundle\DependencyInjection\SncRedisExtension;
 use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
@@ -114,7 +116,6 @@ class SncRedisExtensionTest extends TestCase
         $this->assertTrue($container->hasDefinition('snc_redis.data_collector'));
 
         $this->assertTrue($container->hasDefinition('snc_redis.connection.default_parameters.default'));
-        $this->assertTrue($container->hasDefinition('snc_redis.client.default_profile'));
         $this->assertTrue($container->hasDefinition('snc_redis.client.default_options'));
         $this->assertTrue($container->hasDefinition('snc_redis.default'));
         $this->assertFalse($container->hasAlias('snc_redis.default_client'));
@@ -137,19 +138,16 @@ class SncRedisExtensionTest extends TestCase
         $this->assertTrue($container->hasDefinition('snc_redis.data_collector'));
 
         $this->assertTrue($container->hasDefinition('snc_redis.connection.default_parameters.default'));
-        $this->assertTrue($container->hasDefinition('snc_redis.client.default_profile'));
         $this->assertTrue($container->hasDefinition('snc_redis.client.default_options'));
         $this->assertTrue($container->hasDefinition('snc_redis.default'));
         $this->assertFalse($container->hasAlias('snc_redis.default_client'));
 
         $this->assertTrue($container->hasDefinition('snc_redis.connection.cache_parameters.cache'));
-        $this->assertTrue($container->hasDefinition('snc_redis.client.cache_profile'));
         $this->assertTrue($container->hasDefinition('snc_redis.client.cache_options'));
         $this->assertTrue($container->hasDefinition('snc_redis.cache'));
         $this->assertFalse($container->hasAlias('snc_redis.cache_client'));
 
         $this->assertTrue($container->hasDefinition('snc_redis.connection.monolog_parameters.monolog'));
-        $this->assertTrue($container->hasDefinition('snc_redis.client.monolog_profile'));
         $this->assertTrue($container->hasDefinition('snc_redis.client.monolog_options'));
         $this->assertTrue($container->hasDefinition('snc_redis.monolog'));
         $this->assertFalse($container->hasAlias('snc_redis.monolog_client'));
@@ -157,7 +155,6 @@ class SncRedisExtensionTest extends TestCase
         $this->assertTrue($container->hasDefinition('snc_redis.connection.cluster1_parameters.cluster'));
         $this->assertTrue($container->hasDefinition('snc_redis.connection.cluster2_parameters.cluster'));
         $this->assertTrue($container->hasDefinition('snc_redis.connection.cluster3_parameters.cluster'));
-        $this->assertTrue($container->hasDefinition('snc_redis.client.cluster_profile'));
         $this->assertTrue($container->hasDefinition('snc_redis.client.cluster_options'));
         $this->assertTrue($container->hasDefinition('snc_redis.cluster'));
         $this->assertFalse($container->hasAlias('snc_redis.cluster_client'));
@@ -210,26 +207,6 @@ class SncRedisExtensionTest extends TestCase
                 break;
             }
         }
-    }
-
-    /**
-     * @group legacy
-     *
-     * Test valid parsing of the client profile option
-     */
-    public function testClientProfileOption(): void
-    {
-        $extension = new SncRedisExtension();
-        $config    = $this->parseYaml($this->getFullYamlConfig());
-        $extension->load([$config], $container = $this->getContainer());
-
-        $profileDefinition = $container->getDefinition('snc_redis.client.default_profile');
-        $options           = $container->getDefinition('snc_redis.client.default_options')->getArgument(0);
-
-        $this->assertSame((float) 2, $config['clients']['default']['options']['profile'], 'Profile version 2.0 was parsed as float');
-        $this->assertSame('Predis\\Profile\\RedisVersion200', $profileDefinition->getClass(), 'Profile definition is instance of Predis\\Profile\\RedisVersion200');
-
-        $this->assertSame('snc:', $options['prefix'], 'Prefix option was allowed');
     }
 
     /**
@@ -426,11 +403,12 @@ class SncRedisExtensionTest extends TestCase
 
         $this->assertSame(2, $defaultParameters->getArgument(2)['parameters']['database']);
         $this->assertSame('otherpassword', $defaultParameters->getArgument(2)['parameters']['password']);
+        $this->assertSame('otherusername', $defaultParameters->getArgument(2)['parameters']['username']);
 
         $redis = $container->get('snc_redis.default');
 
         $this->assertSame(1, $redis->getDBNum());
-        $this->assertSame('sncredis', $redis->getAuth());
+        $this->assertSame(['snc_redis', 'snc_password'], $redis->getAuth());
     }
 
     /**
@@ -458,7 +436,7 @@ class SncRedisExtensionTest extends TestCase
 
         $redis = $container->get('snc_redis.default');
 
-        $this->assertInstanceOf('\Redis', $redis);
+        $this->assertInstanceOf(Redis::class, $redis);
 
         $redis->set('test_key', 'test_value');
         $this->assertEquals('test_value', $redis->get('test_key'));
@@ -469,14 +447,14 @@ class SncRedisExtensionTest extends TestCase
      */
     public function testPhpRedisWithInvalidACLParameters(): void
     {
-        $this->expectException('\RedisException');
+        $this->expectException(RedisException::class);
         $this->expectExceptionMessageMatches('/WRONGPASS invalid username/');
 
         $extension = new SncRedisExtension();
         $config    = $this->parseYaml($this->getPhpRedisWithInvalidACLYamlMinimalConfig());
         $extension->load([$config], $container = $this->getContainer());
 
-        $container->get('snc_redis.default');
+        $container->get('snc_redis.default')->isConnected();
     }
 
     /** @return mixed[] */
@@ -529,7 +507,6 @@ clients:
         dsn: redis://localhost
         logging: true
         options:
-            profile: 2.0
             prefix: snc:
     cache:
         type: predis
@@ -549,7 +526,6 @@ clients:
             - redis://pw@/var/run/redis/redis-1.sock/10
             - redis://pw@127.0.0.1:63790/10
         options:
-            profile: 2.4
             connection_timeout: 10
             connection_persistent: true
             read_write_timeout: 30
@@ -730,11 +706,12 @@ clients:
     default:
         type: phpredis
         alias: default
-        dsn: redis://redis:sncredis@localhost/1
+        dsn: redis://snc_redis:snc_password@localhost:8000/1
         options:
             parameters:
                 database: 2
                 password: otherpassword
+                username: otherusername
 EOF;
     }
 
@@ -753,7 +730,7 @@ EOF;
 
     private function getPhpRedisWithACLYamlMinimalConfig(): string
     {
-        return <<<YAML
+        return <<<'YAML'
 clients:
     default:
         type: phpredis
@@ -769,7 +746,7 @@ YAML;
 
     private function getPhpRedisWithInvalidACLYamlMinimalConfig(): string
     {
-        return <<<YAML
+        return <<<'YAML'
 clients:
     default:
         type: phpredis

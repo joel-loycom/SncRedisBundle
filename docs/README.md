@@ -9,7 +9,7 @@ This bundle integrates [Predis](https://github.com/nrk/predis) and [phpredis](ht
 Add the `snc/redis-bundle` package to your `require` section in the `composer.json` file.
 
 ``` bash
-$ composer require snc/redis-bundle 2.x-dev
+$ composer require snc/redis-bundle
 ```
 
 If you want to use the `predis` client library, you have to add the `predis/predis` package, too.
@@ -69,7 +69,6 @@ snc_redis:
             alias: cache
             dsn: redis://secret@localhost/1
             options:
-                profile: 2.2
                 connection_timeout: 10
                 read_write_timeout: 30
         cluster:
@@ -105,7 +104,7 @@ snc_redis:
 Please note that the master dsn connection needs to be tagged with the ```master``` alias.
 If not, `predis` will complain.
 
-A setup using `predis` sentinel replication could look like this:
+A setup using `predis` or `phpredis` sentinel replication could look like this:
 
 ``` yaml
 snc_redis:
@@ -193,6 +192,7 @@ services:
     Symfony\Component\HttpFoundation\Session\Storage\Handler\RedisSessionHandler:
         arguments: ['@snc_redis.session']
 ```
+Note that this solution does not perform session locking and that you may face race conditions when accessing sessions (see [Symfony docs](https://symfony.com/doc/current/session/database.html#store-sessions-in-a-key-value-database-redis)).
 
 ### Monolog logging ###
 
@@ -286,13 +286,17 @@ snc_redis:
                 - redis://pw@127.0.0.1:63790/10
             options:
                 prefix: foo
-                profile: 2.4
                 connection_timeout: 10
                 connection_persistent: true
                 read_write_timeout: 30
                 iterable_multibulk: false
                 throw_errors: true
                 cluster: predis
+                parameters:
+                    # Here you can specify additional context data, see connect/pconnect documentation here
+                    # https://github.com/phpredis/phpredis#connect-open
+                    # Stream configuration options can be found here https://www.php.net/manual/en/context.ssl.php
+                    ssl_context: {'verify_peer': false, 'allow_self_signed': true, 'verify_peer_name': false}
     monolog:
         client: cache
         key: monolog

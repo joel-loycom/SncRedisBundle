@@ -1,6 +1,5 @@
 parameters:
     env(REDIS_URL): redis://localhost
-    env(REDIS_PROFILE): '2.6'
 
 snc_redis:
     clients:
@@ -9,4 +8,5 @@ snc_redis:
             alias: default
             dsn: "%env(REDIS_URL)%"
             options:
-                profile: "%env(REDIS_PROFILE)%"
+                parameters:
+                    ssl_context: {'verify_peer': false, 'allow_self_signed': true, 'verify_peer_name': false}

@@ -9,6 +9,7 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Redis;
 use RedisCluster;
+use RedisSentinel;
 use Snc\RedisBundle\Factory\PhpredisClientFactory;
 use Snc\RedisBundle\Logger\RedisCallInterceptor;
 use Snc\RedisBundle\Logger\RedisLogger;
@@ -75,15 +76,37 @@ class PhpredisClientFactoryTest extends TestCase
             ['redis://localhost:7000'],
             ['connection_timeout' => 5, 'connection_persistent' => false],
             'phprediscluster',
-            false
+            false,
         );
 
         $this->assertInstanceOf(RedisCluster::class, $client);
-        $this->assertNull($client->getOption(RedisCluster::OPT_PREFIX));
-        $this->assertSame(0, $client->getOption(RedisCluster::OPT_SERIALIZER));
-        $this->assertSame(0., $client->getOption(RedisCluster::OPT_READ_TIMEOUT));
-        $this->assertSame(0, $client->getOption(RedisCluster::OPT_SCAN));
+        $this->assertNull($client->getOption(Redis::OPT_PREFIX));
+        $this->assertSame(0, $client->getOption(Redis::OPT_SERIALIZER));
+        $this->assertSame(0., $client->getOption(Redis::OPT_READ_TIMEOUT));
+        $this->assertSame(0, $client->getOption(Redis::OPT_SCAN));
         $this->assertSame(0, $client->getOption(RedisCluster::OPT_SLAVE_FAILOVER));
+    }
+
+    public function testCreatSentinelConfig(): void
+    {
+        $this->logger->method('debug')->withConsecutive(
+            [$this->stringContains('Executing command "CONNECT 127.0.0.1 6379 5 <null>')],
+            ['Executing command "AUTH sncredis"'],
+        );
+        $factory = new PhpredisClientFactory(new RedisCallInterceptor($this->redisLogger));
+
+        $client = $factory->create(
+            RedisSentinel::class,
+            ['redis://sncredis@localhost:26379'],
+            ['connection_timeout' => 5, 'connection_persistent' => false, 'service' => 'mymaster'],
+            'phpredissentinel',
+            true,
+        );
+
+        $this->assertInstanceOf(Redis::class, $client);
+        $this->assertNull($client->getOption(Redis::OPT_PREFIX));
+        $this->assertSame(0, $client->getOption(Redis::OPT_SERIALIZER));
+        $this->assertSame('sncredis', $client->getAuth());
     }
 
     public function testCreateFullConfig(): void
@@ -105,7 +128,7 @@ class PhpredisClientFactoryTest extends TestCase
                 ],
             ],
             'alias_test',
-            false
+            false,
         );
 
         $this->assertInstanceOf(Redis::class, $client);
@@ -130,7 +153,7 @@ class PhpredisClientFactoryTest extends TestCase
 
         $client = $factory->create(
             Redis::class,
-            ['redis://redis:sncredis@localhost:6379/2'],
+            ['redis://sncredis@localhost:6379/2'],
             [
                 'parameters' => [
                     'database' => 3,
@@ -139,12 +162,42 @@ class PhpredisClientFactoryTest extends TestCase
                 'connection_timeout' => 5,
             ],
             'alias_test',
-            true
+            true,
         );
 
         $this->assertInstanceOf(Redis::class, $client);
         $this->assertSame(2, $client->getDBNum());
         $this->assertSame('sncredis', $client->getAuth());
+        $this->assertNull($client->getPersistentID());
+    }
+
+    public function testDsnConfigWithUsername(): void
+    {
+        $this->logger->method('debug')->withConsecutive(
+            [$this->stringContains('Executing command "CONNECT localhost 8000 5')],
+            ['Executing command "AUTH snc_redis snc_password"'],
+            ['Executing command "SELECT 0"'],
+        );
+
+        $factory = new PhpredisClientFactory(new RedisCallInterceptor($this->redisLogger));
+
+        $client = $factory->create(
+            Redis::class,
+            ['redis://snc_redis:snc_password@localhost:8000/0'],
+            [
+                'parameters' => [
+                    'database' => 3,
+                    'password' => 'secret',
+                ],
+                'connection_timeout' => 5,
+            ],
+            'alias_test',
+            true,
+        );
+
+        $this->assertInstanceOf(Redis::class, $client);
+        $this->assertSame(0, $client->getDBNum());
+        $this->assertSame(['snc_redis', 'snc_password'], $client->getAuth());
         $this->assertNull($client->getPersistentID());
     }
 
@@ -154,7 +207,7 @@ class PhpredisClientFactoryTest extends TestCase
 
         $client = $factory->create(
             Redis::class,
-            [['redis://redis:sncredis@localhost:6379/2']],
+            [['redis://sncredis@localhost:6379/2']],
             [
                 'parameters' => [
                     'database' => 3,
@@ -163,7 +216,7 @@ class PhpredisClientFactoryTest extends TestCase
                 'connection_timeout' => 5,
             ],
             'alias_test',
-            false
+            false,
         );
 
         $this->assertInstanceOf(Redis::class, $client);
@@ -185,7 +238,7 @@ class PhpredisClientFactoryTest extends TestCase
                 'connection_timeout' => 5,
             ],
             'default',
-            false
+            false,
         );
 
         self::assertSame($serializer, $client->getOption(Redis::OPT_SERIALIZER));
@@ -204,7 +257,7 @@ class PhpredisClientFactoryTest extends TestCase
                 'connection_timeout' => 5,
             ],
             'default',
-            false
+            false,
         );
     }
 
@@ -234,7 +287,7 @@ class PhpredisClientFactoryTest extends TestCase
 
         $client = $factory->create(
             Redis::class,
-            ['redis://redis:sncredis@localhost:6379/2'],
+            ['redis://sncredis@localhost:6379/2'],
             [
                 'parameters' => [
                     'database' => 3,
@@ -243,7 +296,7 @@ class PhpredisClientFactoryTest extends TestCase
                 'connection_timeout' => 5,
             ],
             'alias_test',
-            true
+            true,
         );
 
         /** @psalm-suppress TooManyArguments */
@@ -265,10 +318,10 @@ class PhpredisClientFactoryTest extends TestCase
 
         $client = $factory->create(
             Redis::class,
-            ['redis://redis:sncredis@localhost:6379/2'],
+            ['redis://sncredis@localhost:6379/2'],
             ['connection_timeout' => 5],
             'alias_test',
-            true
+            true,
         );
 
         $iterator = 1;

@@ -49,21 +49,15 @@ class Kernel extends BaseKernel
         $loader->load(__DIR__ . '/config.yaml');
 
         $loader->load(static function (ContainerBuilder $container): void {
-            $container->loadFromExtension('framework', [
-                'router' => [
-                    'resource' => 'kernel::loadRoutes',
-                    'type' => 'service',
-                    'utf8' => true,
-                ],
-            ]);
+            $framework = ['router' => ['resource' => 'kernel::loadRoutes', 'type' => 'service', 'utf8' => true]];
 
             // Since symfony/framework-bundle 5.3: Not setting the "framework.session.storage_factory_id" configuration option
             // is deprecated, it will replace the "framework.session.storage_id" configuration option in version 6.0.
             if (self::VERSION_ID >= 50300) {
-                $container->loadFromExtension('framework', [
-                    'session' => ['storage_factory_id' => 'session.storage.factory.mock_file'],
-                ]);
+                $framework['session'] = ['storage_factory_id' => 'session.storage.factory.mock_file'];
             }
+
+            $container->loadFromExtension('framework', $framework);
 
             $container->register('kernel', static::class)
                 ->addTag('routing.route_loader')
